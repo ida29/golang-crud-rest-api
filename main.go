@@ -2,11 +2,15 @@ package main
 
 import (
 	"fmt"
-	"golang-crud-rest-api/controllers"
 	"golang-crud-rest-api/entities"
+	"golang-crud-rest-api/protobuf/golang_protobuf_brand"
+	"golang-crud-rest-api/protobuf/server"
 	"golang-crud-rest-api/repos"
 	"log"
+	"net"
 	"net/http"
+
+	"google.golang.org/grpc"
 
 	"github.com/gorilla/mux"
 )
@@ -14,27 +18,37 @@ import (
 func main() {
 	LoadAppConfig()
 
+	// Create Brand Repository
+	var brandRepo repos.GenericRepo[entities.Brand] = repos.NewBrandRepo()
+
+	// push RPC server as goroutine
+	go StartRPCServer(&brandRepo)
+
 	// Initialize the router
 	router := mux.NewRouter().StrictSlash(true)
 
-	RegisterProductRoutes(router)
-	RegisterBrandRoutes(router)
+	RegisterBrandRoutes(router, brandRepo)
 
 	// Start the server
 	log.Println(fmt.Sprintf("Starting Server on port %s", AppConfig.Port))
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", AppConfig.Port), router))
 }
 
-func RegisterProductRoutes(router *mux.Router) {
-	var muxBase = "/api/products"
-	router.HandleFunc(muxBase, controllers.GetProducts).Methods("GET")
-	router.HandleFunc(fmt.Sprintf("%s/{id}", muxBase), controllers.GetProductById).Methods("GET")
-	router.HandleFunc(muxBase, controllers.CreateProduct).Methods("POST")
-	router.HandleFunc(fmt.Sprintf("%s/{id}", muxBase), controllers.UpdateProduct).Methods("PUT")
-	router.HandleFunc(fmt.Sprintf("%s/{id}", muxBase), controllers.DeleteProduct).Methods("DELETE")
+func RegisterBrandRoutes(router *mux.Router, brandRepo repos.GenericRepo[entities.Brand]) {
+	NewGenericRouter[entities.Brand, *repos.BrandRepo]("/api/brands", router, &brandRepo)
 }
 
-func RegisterBrandRoutes(router *mux.Router) {
-	var brandRepo repos.GenericRepo[entities.Brand] = repos.NewBrandRepo()
-	NewGenericRouter[entities.Brand, *repos.BrandRepo]("/api/brands", router, &brandRepo)
+func StartRPCServer(brandRepo *repos.GenericRepo[entities.Brand]) {
+	lis, err := net.Listen("tcp", fmt.Sprintf(":%s", AppConfig.RPCPort))
+	if err != nil {
+		log.Fatalf("failed to listen: %v", err)
+	}
+
+	s := grpc.NewServer()
+	golang_protobuf_brand.RegisterCrudServer(s, server.NewCRUDServiceServer(brandRepo))
+
+	log.Printf("gRPC server listening on port %v\n", AppConfig.RPCPort)
+	if err := s.Serve(lis); err != nil {
+		log.Fatalf("failed to serve: %v", err)
+	}
 }
