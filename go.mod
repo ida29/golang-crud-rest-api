@@ -2,6 +2,8 @@ module golang-crud-rest-api
 
 go 1.21.6
 
+require google.golang.org/protobuf v1.32.0
+
 require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
